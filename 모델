@@ -1,0 +1,783 @@
+"""Channel gating kinetics. Functions of membrane voltage"""
+return 0.01*(V+55.0)/(1.0 - sp.exp(-(V+55.0) / 10.0))
+
+def beta_n(self, V):
+"""Channel gating kinetics. Functions of membrane voltage"""
+return 0.125*sp.exp(-(V+65) / 80.0)
+
+def I_Na(self, V, m, h):
+"""
+        Membrane current (in uA/cm^2)
+        Sodium (Na = element name)
+
+        |  :param V:
+        |  :param m:
+        |  :param h:
+        |  :return:
+        """
+return self.g_Na * m**3 * h * (V - self.E_Na)
+
+def I_K(self, V, n):
+"""
+        Membrane current (in uA/cm^2)
+        Potassium (K = element name)
+
+        |  :param V:
+        |  :param h:
+        |  :return:
+        """
+return self.g_K  * n**4 * (V - self.E_K)
+#  Leak
+def I_L(self, V):
+"""
+        Membrane current (in uA/cm^2)
+        Leak
+
+        |  :param V:
+        |  :param h:
+        |  :return:
+        """
+return self.g_L * (V - self.E_L)
+
+def I_inj(self, t):
+"""
+        External Current
+
+        |  :param t: time
+        |  :return: step up to 10 uA/cm^2 at t>100
+        |           step down to 0 uA/cm^2 at t>200
+        |           step up to 35 uA/cm^2 at t>300
+        |           step down to 0 uA/cm^2 at t>400
+        """
+return 10*(t>100) - 10*(t>200) + 35*(t>300) - 35*(t>400)
+
+@staticmethod
+def dALLdt(X, t, self):
+"""
+        Integrate
+
+        |  :param X:
+        |  :param t:
+        |  :return: calculate membrane potential & activation variables
+        """
+V, m, h, n = X
+
+dVdt = (self.I_inj(t) - self.I_Na(V, m, h) - self.I_K(V, n) - self.I_L(V)) / self.C_m
+dmdt = self.alpha_m(V)*(1.0-m) - self.beta_m(V)*m
+dhdt = self.alpha_h(V)*(1.0-h) - self.beta_h(V)*h
+dndt = self.alpha_n(V)*(1.0-n) - self.beta_n(V)*n
+return dVdt, dmdt, dhdt, dndt
+
+def Main(self):
+"""
+        Main demo for the Hodgkin Huxley neuron model
+        """
+
+X = odeint(self.dALLdt, [-65, 0.05, 0.6, 0.32], self.t, args=(self,))
+        V = X[:,0]
+        m = X[:,1]
+        h = X[:,2]
+"""
+Python implementation of the Hodgkin-Huxley spiking neuron model
+https://github.com/swharden/pyHH
+"""
+import matplotlib.pyplotas plt
+import numpyas np
+
+
+class HHModel:
+"""The HHModel tracks conductances of 3 channels to calculate Vm"""
+
+class Gate:
+"""The Gate object manages a channel's kinetics and open state"""
+alpha, beta, state = 0, 0, 0
+
+def update(self, deltaTms):
+alphaState = self.alpha * (1-self.state)
+betaState = self.beta * self.state
+self.state += deltaTms * (alphaState - betaState)
+
+def setInfiniteState(self):
+self.state = self.alpha / (self.alpha + self.beta)
+
+ENa, EK, EKleak = 115, -12, 10.6
+gNa, gK, gKleak = 120, 36, 0.3
+m, n, h = Gate(), Gate(), Gate()
+    Cm = 1
+
+def __init__(self, startingVoltage=0):
+self.Vm = startingVoltage
+self.UpdateGateTimeConstants(startingVoltage)
+self.m.setInfiniteState()
+self.n.setInfiniteState()
+self.n.setInfiniteState()
+
+def UpdateGateTimeConstants(self, Vm):
+"""Update time constants of all gates based on the given Vm"""
+self.n.alpha = .01 * ((10-Vm) / (np.exp((10-Vm)/10)-1))
+self.n.beta = .125*np.exp(-Vm/80)
+self.m.alpha = .1*((25-Vm) / (np.exp((25-Vm)/10)-1))
+self.m.beta = 4*np.exp(-Vm/18)
+self.h.alpha = .07*np.exp(-Vm/20)
+self.h.beta = 1/(np.exp((30-Vm)/10)+1)
+
+def UpdateCellVoltage(self, stimulusCurrent, deltaTms):
+"""calculate channel currents using the latest gate time constants"""
+INa = np.power(self.m.state, 3) * self.gNa * \
+self.h.state*(self.Vm-self.ENa)
+        IK = np.power(self.n.state, 4) * self.gK * (self.Vm-self.EK)
+IKleak = self.gKleak * (self.Vm-self.EKleak)
+Isum = stimulusCurrent - INa - IK - IKleak
+self.Vm += deltaTms * Isum / self.Cm
+
+def UpdateGateStates(self, deltaTms):
+"""calculate new channel open states using latest Vm"""
+self.n.update(deltaTms)
+self.m.update(deltaTms)
+self.h.update(deltaTms)
+
+def Iterate(self, stimulusCurrent=0, deltaTms=0.05):
+self.UpdateGateTimeConstants(self.Vm)
+self.UpdateCellVoltage(stimulusCurrent, deltaTms)
+self.UpdateGateStates(deltaTms)
+
+
+if __name__ == "__main__":
+hh = HHModel()
+pointCount = 5000
+voltages = np.empty(pointCount)
+    times = np.arange(pointCount) * 0.05
+stim = np.zeros(pointCount)
+    stim[1200:3800] = 20  # create a square pulse
+
+for iin range(len(times)):
+hh.Iterate(stimulusCurrent=stim[i], deltaTms=0.05)
+        voltages[i] = hh.Vm
+# note: you could also plot hh's n, m, and k (channel open states)
+
+f, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 5),
+gridspec_kw={'height_ratios': [3, 1]})
+
+    ax1.plot(times, voltages - 70, 'b')
+    ax1.set_ylabel("Membrane Potential (mV)")
+    ax1.set_title("Hodgkin-Huxley Spiking Neuron Model", fontSize=16)
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['bottom'].set_visible(False)
+    ax1.tick_params(bottom=False)
+
+    ax2.plot(times, stim, 'r')
+    ax2.set_ylabel("Stimulus (µA/cm²)")
+    ax2.set_xlabel("Simulation Time (milliseconds)")
+    ax2.spines['right'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
+
+plt.margins(0, 0.1)
+plt.tight_layout()
+plt.savefig("dev/concept4.png")
+plt.show()
+"""
+Hodgkin-Huxley Model Neuron Simulated Discretely with Python
+Inspired by matlab code on "andy's brain blog" Oct 15 2013.
+"""
+
+import matplotlib.pyplotas plt
+import numpyas np
+
+# Simulation time (all time units are milliseconds)
+simulationTime = 200
+deltaT = .01
+pointsPerMillisec = 1.0/deltaT
+t = np.arange(simulationTime/deltaT) * deltaT
+
+# Create the stimulus waveform
+I = np.zeros(len(t))
+
+# Add some square pulses to the stimulus waveform
+I[int(125 * pointsPerMillisec):int(175 * pointsPerMillisec)] = 50
+I[int(25 * pointsPerMillisec):int(75 * pointsPerMillisec)] = 10
+
+# channel conductances (mS/cm^2)
+gK = 36
+gNa = 120
+g_L = .3
+
+# ion reversal potentials (mV)
+E_K = -12
+E_Na = 115
+E_L = 10.6
+
+# membrane properties
+C = 1.0  # capacitance (uF/cm^2)
+
+# Open state over time (start at zero)
+n = np.zeros(len(t))
+m = np.zeros(len(t))
+h = np.zeros(len(t))
+V = np.zeros(len(t))
+
+# Initial States
+Vstart = -0  # Baseline voltage
+alpha_n = .01 * ((10-Vstart) / (np.exp((10-Vstart)/10)-1))  # Equation 12
+beta_n = .125*np.exp(-Vstart/80)  # Equation 13
+alpha_m = .1*((25-Vstart) / (np.exp((25-Vstart)/10)-1))  # Equation 20
+beta_m = 4*np.exp(-Vstart/18)  # Equation 21
+alpha_h = .07*np.exp(-Vstart/20)  # Equation 23
+beta_h = 1/(np.exp((30-Vstart)/10)+1)  # Equation 24
+
+# Initial conductances
+n[0] = alpha_n/(alpha_n+beta_n)  # Equation 9
+m[0] = alpha_m/(alpha_m+beta_m)  # Equation 18
+h[0] = alpha_h/(alpha_h+beta_h)  # Equation 18
+V[0] = Vstart
+
+# Simulate
+for iin range(len(t)-1):
+
+# coefficients
+alpha_n = .01 * ((10-V[i]) / (np.exp((10-V[i])/10)-1))
+beta_n = .125*np.exp(-V[i]/80)
+alpha_m = .1*((25-V[i]) / (np.exp((25-V[i])/10)-1))
+beta_m = 4*np.exp(-V[i]/18)
+alpha_h = .07*np.exp(-V[i]/20)
+beta_h = 1/(np.exp((30-V[i])/10)+1)
+
+# currents
+I_Na = np.power(m[i], 3) * gNa * h[i] * (V[i]-E_Na)
+    I_K = np.power(n[i], 4) * gK * (V[i]-E_K)
+    I_L = g_L * (V[i]-E_L)
+I_ion = I[i] - I_K - I_Na - I_L
+
+# calculate derivatives using Euler first order approximation
+V[i+1] = V[i] + deltaT * I_ion / C
+    n[i+1] = n[i] + deltaT * (alpha_n * (1-n[i]) - beta_n * n[i])
+    m[i+1] = m[i] + deltaT * (alpha_m * (1-m[i]) - beta_m * m[i])
+    h[i+1] = h[i] + deltaT * (alpha_h * (1-h[i]) - beta_h * h[i])
+
+# Display Results
+V = V-70  # Set resting potential to -70mv
+
+plt.figure(figsize=(8, 8))
+
+ax1 = plt.subplot(411)
+ax1.plot(t, V, color='b')
+ax1.set_ylabel("Potential (mV)")
+
+ax2 = plt.subplot(412)
+ax2.plot(t, I, color='r')
+ax2.set_ylabel("Stimulus")
+
+ax3 = plt.subplot(413, sharex=ax1)
+ax3.plot(t, gK*np.power(n, 4), label='K')
+ax3.plot(t, gNa*np.power(m, 3)*h, label='Na')
+ax3.set_ylabel("Conductance")
+plt.legend()
+
+ax4 = plt.subplot(414, sharex=ax1)
+ax4.plot(t, n, label='K')
+ax4.plot(t, m, label='Na')
+ax4.set_ylabel("Open State")
+ax4.set_xlabel("Time (milliseconds)")
+plt.legend()
+
+plt.tight_layout()
+plt.savefig("dev/concept3.png")
+plt.show()
+import matplotlib.pyplotas plt
+import numpyas np
+
+# adapted from https://www.bonaccorso.eu/2017/08/19/hodgkin-huxley-spiking-neuron-model-python/
+
+# simulation time (millisecond units)
+tmin = 0.0
+tmax = 50.0
+T = np.linspace(tmin, tmax, 10000)
+
+# channel conductances (mS/cm^2)
+gK = 36.0
+gNa = 120.0
+gL = 0.3  # leak
+
+# ion reversal potentials (mV)
+VK = -12.0
+VNa = 115.0
+Vl = 10.613  # Leak
+
+# membrane properties
+Cm = 1.0  # capacitance (uF/cm^2)
+
+# Potassium ion-channel rate functions
+
+
+def alpha_n(Vm):
+return (0.01 * (10.0 - Vm)) / (np.exp(1.0 - (0.1 * Vm)) - 1.0)
+
+
+def beta_n(Vm):
+return 0.125 * np.exp(-Vm / 80.0)
+
+# Sodium ion-channel rate functions
+
+
+def alpha_m(Vm):
+return (0.1 * (25.0 - Vm)) / (np.exp(2.5 - (0.1 * Vm)) - 1.0)
+
+
+def beta_m(Vm):
+return 4.0 * np.exp(-Vm / 18.0)
+
+
+def alpha_h(Vm):
+return 0.07 * np.exp(-Vm / 20.0)
+
+
+def beta_h(Vm):
+return 1.0 / (np.exp(3.0 - (0.1 * Vm)) + 1.0)
+
+# n, m, and h steady-state values
+
+
+def n_inf(Vm=0.0):
+return alpha_n(Vm) / (alpha_n(Vm) + beta_n(Vm))
+
+
+def m_inf(Vm=0.0):
+return alpha_m(Vm) / (alpha_m(Vm) + beta_m(Vm))
+
+
+def h_inf(Vm=0.0):
+return alpha_h(Vm) / (alpha_h(Vm) + beta_h(Vm))
+
+# Input stimulus
+
+
+def Id(t):
+if 0.0 < t <1.0:
+return 150.0
+elif10.0 < t <11.0:
+return 50.0
+return 0.0
+
+# Compute derivatives
+
+
+def compute_derivatives(y, t0):
+dy = np.zeros((4,))
+
+Vm = y[0]
+    n = y[1]
+    m = y[2]
+    h = y[3]
+
+# dVm/dt
+GK = (gK / Cm) * np.power(n, 4.0)
+GNa = (gNa / Cm) * np.power(m, 3.0) * h
+    GL = gL / Cm
+
+dy[0] = (Id(t0) / Cm) - (GK * (Vm - VK)) - \
+        (GNa * (Vm - VNa)) - (GL * (Vm - Vl))
+
+# dn/dt
+dy[1] = (alpha_n(Vm) * (1.0 - n)) - (beta_n(Vm) * n)
+
+# dm/dt
+dy[2] = (alpha_m(Vm) * (1.0 - m)) - (beta_m(Vm) * m)
+
+# dh/dt
+dy[3] = (alpha_h(Vm) * (1.0 - h)) - (beta_h(Vm) * h)
+
+return dy
+
+
+# State (Vm, n, m, h)
+Y = np.array([0.0, n_inf(), m_inf(), h_inf()])
+
+# Solve ODE system
+from scipy.integrateimport odeint
+Vy = odeint(compute_derivatives, Y, T)
+
+voltage = Vy[:, 0]
+dndt = Vy[:, 1]
+dmdt = Vy[:, 2]
+dhdt = Vy[:, 3]
+
+plt.figure()
+
+ax1 = plt.subplot(211)
+ax1.plot(voltage)
+
+ax2 = plt.subplot(212, sharex= ax1)
+ax2.plot(dndt, label="dn/dt")
+ax2.plot(dmdt, label="dm/dt")
+ax2.plot(dhdt, label="dh/dt")
+ax2.legend()
+
+plt.tight_layout()
+plt.show()
+
+import scipyas sp
+import pylabas plt
+from scipy.integrateimport odeint
+
+class HodgkinHuxley():
+"""Full Hodgkin-Huxley Model implemented in Python"""
+
+C_m  =   1.0
+"""membrane capacitance, in uF/cm^2"""
+
+g_Na = 120.0
+"""Sodium (Na) maximum conductances, in mS/cm^2"""
+
+g_K  =  36.0
+"""Postassium (K) maximum conductances, in mS/cm^2"""
+
+g_L  =   0.3
+"""Leak maximum conductances, in mS/cm^2"""
+
+E_Na =  50.0
+"""Sodium (Na) Nernst reversal potentials, in mV"""
+
+E_K  = -77.0
+"""Postassium (K) Nernst reversal potentials, in mV"""
+
+E_L  = -54.387
+"""Leak Nernst reversal potentials, in mV"""
+
+t = sp.arange(0.0, 450.0, 0.01)
+""" The time to integrate over """
+
+def alpha_m(self, V):
+"""Channel gating kinetics. Functions of membrane voltage"""
+return 0.1*(V+40.0)/(1.0 - sp.exp(-(V+40.0) / 10.0))
+
+def beta_m(self, V):
+"""Channel gating kinetics. Functions of membrane voltage"""
+return 4.0*sp.exp(-(V+65.0) / 18.0)
+
+def alpha_h(self, V):
+"""Channel gating kinetics. Functions of membrane voltage"""
+return 0.07*sp.exp(-(V+65.0) / 20.0)
+
+def beta_h(self, V):
+"""Channel gating kinetics. Functions of membrane voltage"""
+return 1.0/(1.0 + sp.exp(-(V+35.0) / 10.0))
+
+        n = X[:,3]
+ina = self.I_Na(V, m, h)
+ik = self.I_K(V, n)
+        il = self.I_L(V)
+
+plt.figure()
+
+        ax1 = plt.subplot(4,1,1)
+plt.title('Hodgkin-Huxley Neuron')
+plt.plot(self.t, V, 'k')
+plt.ylabel('V (mV)')
+
+plt.subplot(4,1,2, sharex= ax1)
+plt.plot(self.t, ina, 'c', label='$I_{Na}$')
+plt.plot(self.t, ik, 'y', label='$I_{K}$')
+plt.plot(self.t, il, 'm', label='$I_{L}$')
+plt.ylabel('Current')
+plt.legend()
+
+plt.subplot(4,1,3, sharex= ax1)
+plt.plot(self.t, m, 'r', label='m')
+plt.plot(self.t, h, 'g', label='h')
+plt.plot(self.t, n, 'b', label='n')
+plt.ylabel('Gating Value')
+plt.legend()
+
+plt.subplot(4,1,4, sharex= ax1)
+i_inj_values = [self.I_inj(t) for t in self.t]
+plt.plot(self.t, i_inj_values, 'k')
+plt.xlabel('t (ms)')
+plt.ylabel('$I_{inj}$ ($\\mu{A}/cm^2$)')
+plt.ylim(-1, 40)
+
+plt.tight_layout()
+plt.show()
+
+if __name__ == '__main__':
+    runner = HodgkinHuxley()
+runner.Main()
+
+# imports
+import snntorchas snn
+from snntorchimport spikeplotas splt
+from snntorchimport spikegen
+
+import torch
+import torch.nnas nn
+from torch.utils.dataimport DataLoader
+from torchvisionimport datasets, transforms
+
+import matplotlib.pyplotas plt
+import numpyas np
+import itertools
+
+
+# Leaky neuron model, overriding the backward pass with a custom function
+class LeakySurrogate(nn.Module):
+def __init__(self, beta, threshold=1.0):
+super(LeakySurrogate, self).__init__()
+
+# initialize decay rate beta and threshold
+self.beta = beta
+self.threshold = threshold
+self.spike_op = self.SpikeOperator.apply
+
+# the forward function is called each time we call Leaky
+def forward(self, input_, mem):
+spk = self.spike_op((mem - self.threshold))  # call the Heaviside function
+reset = (spk * self.threshold).detach()  # removes spike_op gradient from reset
+mem = self.beta * mem + input_ - reset  # Eq (1)
+return spk, mem
+
+# Forward pass: Heaviside function
+    # Backward pass: Override Dirac Delta with the Spike itself
+@staticmethod
+class SpikeOperator(torch.autograd.Function):
+@staticmethod
+def forward(ctx, mem):
+spk = (mem >0).float()  # Heaviside on the forward pass: Eq(2)
+ctx.save_for_backward(spk)  # store the spike for use in the backward pass
+return spk
+
+@staticmethod
+def backward(ctx, grad_output):
+            (spk,) = ctx.saved_tensors# retrieve the spike
+grad = grad_output * spk# scale the gradient by the spike: 1/0
+return grad
+
+lif1 = snn.Leaky(beta=0.9)
+
+# dataloader arguments
+batch_size = 128
+data_path='/data/mnist'
+
+dtype = torch.float
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+# Define a transform
+transform = transforms.Compose([
+transforms.Resize((28, 28)),
+transforms.Grayscale(),
+transforms.ToTensor(),
+transforms.Normalize((0,), (1,))])
+
+mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=transform)
+mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
+
+# # temporary dataloader if MNIST service is unavailable
+# !wget www.di.ens.fr/~lelarge/MNIST.tar.gz
+# !tar -zxvf MNIST.tar.gz
+
+# mnist_train = datasets.MNIST(root = './', train=True, download=True, transform=transform)
+# mnist_test = datasets.MNIST(root = './', train=False, download=True, transform=transform)
+# Create DataLoaders
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, drop_last=True)
+
+# Network Architecture
+num_inputs = 28*28
+num_hidden = 1000
+num_outputs = 10
+
+# Temporal Dynamics
+num_steps = 25
+beta = 0.95
+
+
+# Define Network
+class Net(nn.Module):
+def __init__(self):
+super().__init__()
+
+# Initialize layers
+self.fc1 = nn.Linear(num_inputs, num_hidden)
+self.lif1 = snn.Leaky(beta=beta)
+self.fc2 = nn.Linear(num_hidden, num_outputs)
+self.lif2 = snn.Leaky(beta=beta)
+
+def forward(self, x):
+# Initialize hidden states at t=0
+mem1 = self.lif1.init_leaky()
+        mem2 = self.lif2.init_leaky()
+
+# Record the final layer
+spk2_rec = []
+        mem2_rec = []
+
+for step in range(num_steps):
+            cur1 = self.fc1(x)
+            spk1, mem1 = self.lif1(cur1, mem1)
+            cur2 = self.fc2(spk1)
+            spk2, mem2 = self.lif2(cur2, mem2)
+            spk2_rec.append(spk2)
+            mem2_rec.append(mem2)
+
+return torch.stack(spk2_rec, dim=0), torch.stack(mem2_rec, dim=0)
+
+
+# Load the network onto CUDA if available
+net = Net().to(device)
+
+# pass data into the network, sum the spikes over time
+# and compare the neuron with the highest number of spikes
+# with the target
+
+def print_batch_accuracy(data, targets, train=False):
+    output, _ = net(data.view(batch_size, -1))
+    _, idx = output.sum(dim=0).max(1)
+    acc = np.mean((targets == idx).detach().cpu().numpy())
+
+if train:
+print(f"Train set accuracy for a single minibatch: {acc*100:.2f}%")
+else:
+print(f"Test set accuracy for a single minibatch: {acc*100:.2f}%")
+
+def train_printer(
+    data, targets, epoch,
+counter, iter_counter,
+loss_hist, test_loss_hist, test_data, test_targets):
+print(f"Epoch{epoch}, Iteration {iter_counter}")
+print(f"Train Set Loss: {loss_hist[counter]:.2f}")
+print(f"Test Set Loss: {test_loss_hist[counter]:.2f}")
+print_batch_accuracy(data, targets, train=True)
+print_batch_accuracy(test_data, test_targets, train=False)
+print("\n")
+
+loss = nn.CrossEntropyLoss()
+
+optimizer = torch.optim.Adam(net.parameters(), lr=5e-4, betas=(0.9, 0.999))
+
+data, targets = next(iter(train_loader))
+data = data.to(device)
+targets = targets.to(device)
+
+spk_rec, mem_rec = net(data.view(batch_size, -1))
+print(mem_rec.size())
+
+# initialize the total loss value
+loss_val = torch.zeros((1), dtype=dtype, device=device)
+
+# sum loss at every step
+for step in range(num_steps):
+loss_val += loss(mem_rec[step], targets)
+
+print(f"Training loss: {loss_val.item():.3f}")
+
+print_batch_accuracy(data, targets, train=True)
+
+# clear previously stored gradients
+optimizer.zero_grad()
+
+# calculate the gradients
+loss_val.backward()
+
+# weight update
+optimizer.step()
+
+# calculate new network outputs using the same data
+spk_rec, mem_rec = net(data.view(batch_size, -1))
+
+# initialize the total loss value
+loss_val = torch.zeros((1), dtype=dtype, device=device)
+
+# sum loss at every step
+for step in range(num_steps):
+loss_val += loss(mem_rec[step], targets)
+
+print(f"Training loss: {loss_val.item():.3f}")
+print_batch_accuracy(data, targets, train=True)
+
+num_epochs = 1
+loss_hist = []
+test_loss_hist = []
+counter = 0
+
+# Outer training loop
+for epoch in range(num_epochs):
+iter_counter = 0
+train_batch = iter(train_loader)
+
+# Minibatch training loop
+for data, targets in train_batch:
+        data = data.to(device)
+        targets = targets.to(device)
+
+# forward pass
+net.train()
+spk_rec, mem_rec = net(data.view(batch_size, -1))
+
+# initialize the loss & sum over time
+loss_val = torch.zeros((1), dtype=dtype, device=device)
+for step in range(num_steps):
+loss_val += loss(mem_rec[step], targets)
+
+# Gradient calculation + weight update
+optimizer.zero_grad()
+loss_val.backward()
+optimizer.step()
+
+# Store loss history for future plotting
+loss_hist.append(loss_val.item())
+
+# Test set
+with torch.no_grad():
+net.eval()
+test_data, test_targets = next(iter(test_loader))
+test_data = test_data.to(device)
+test_targets = test_targets.to(device)
+
+# Test set forward pass
+test_spk, test_mem = net(test_data.view(batch_size, -1))
+
+# Test set loss
+test_loss = torch.zeros((1), dtype=dtype, device=device)
+for step in range(num_steps):
+test_loss += loss(test_mem[step], test_targets)
+test_loss_hist.append(test_loss.item())
+
+# Print train/test loss/accuracy
+if counter % 50 == 0:
+train_printer(
+                    data, targets, epoch,
+counter, iter_counter,
+loss_hist, test_loss_hist,
+test_data, test_targets)
+            counter += 1
+iter_counter +=1
+
+# Plot Loss
+fig = plt.figure(facecolor="w", figsize=(10, 5))
+plt.plot(loss_hist)
+plt.plot(test_loss_hist)
+plt.title("Loss Curves")
+plt.legend(["Train Loss", "Test Loss"])
+plt.xlabel("Iteration")
+plt.ylabel("Loss")
+plt.show()
+
+total = 0
+correct = 0
+
+# drop_last switched to False to keep all samples
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, drop_last=False)
+
+with torch.no_grad():
+net.eval()
+for data, targets in test_loader:
+        data = data.to(device)
+        targets = targets.to(device)
+
+# forward pass
+test_spk, _ = net(data.view(data.size(0), -1))
+
+# calculate total accuracy
+_, predicted = test_spk.sum(dim=0).max(1)
+        total += targets.size(0)
+        correct += (predicted == targets).sum().item()
+
+print(f"Total correctly classified test set images: {correct}/{total}")
+print(f"Te
